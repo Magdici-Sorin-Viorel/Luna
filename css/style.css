@@ -283,6 +283,18 @@ textarea { resize: vertical; font-size: 0.85rem; font-family: ui-monospace, 'SFM
 .status[data-kind="prep"] .status-detail { color: var(--ink); opacity: 0.75; }
 .status .btn { width: 100%; max-width: 280px; }
 
+/* ---------- Install prompt ---------- */
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--sand-soft);
+}
+.install p { margin: 0; }
+.btn-install { background: var(--sand); color: #2b1f12; font-weight: 600; }
+
 /* ---------- Calendar export notice ---------- */
 .notice {
   display: flex;

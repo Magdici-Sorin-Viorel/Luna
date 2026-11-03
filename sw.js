@@ -2,7 +2,7 @@
  * Service worker: caches the app shell so Luna works offline.
  * Bump CACHE_NAME whenever app files change to force an update.
  */
-const CACHE_NAME = 'luna-v1';
+const CACHE_NAME = 'luna-v2';
 
 const APP_SHELL = [
   './',
@@ -42,7 +42,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin === self.location.origin || isFont) {
     // Cache first, then network; store fresh copies for next time.
     event.respondWith(
-      caches.match(request).then((cached) => {
+      // Navigations ignore the query string (start_url is ./?source=pwa).
+      caches.match(request, { ignoreSearch: request.mode === 'navigate' }).then((cached) => {
         const network = fetch(request)
           .then((response) => {
             if (response && (response.ok || response.type === 'opaque')) {

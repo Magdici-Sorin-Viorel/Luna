@@ -581,6 +581,48 @@
     });
   }
 
+  /* ---------- Install button ---------- */
+
+  let installPrompt = null; // deferred beforeinstallprompt event
+
+  function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function updateInstallUI() {
+    const available = Boolean(installPrompt) && !isStandalone();
+    $('installBox').hidden = !available;
+    $('installSettings').hidden = !available;
+  }
+
+  function setupInstall() {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault(); // show our own button instead of the mini-infobar
+      installPrompt = e;
+      updateInstallUI();
+    });
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      updateInstallUI();
+      showToast('Luna e instalată. O găsești printre aplicațiile telefonului.');
+    });
+    document.querySelectorAll('[data-action="install"]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!installPrompt) {
+          showToast('Folosește meniul ⋮ din Chrome → Instalează aplicația.');
+          return;
+        }
+        installPrompt.prompt();
+        try {
+          await installPrompt.userChoice;
+        } finally {
+          installPrompt = null;
+          updateInstallUI();
+        }
+      });
+    });
+  }
+
   /* ---------- Offline support ---------- */
 
   function registerServiceWorker() {
@@ -594,6 +636,7 @@
   }
 
   bindEvents();
+  setupInstall();
   render();
   registerServiceWorker();
 })();

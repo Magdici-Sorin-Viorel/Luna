@@ -67,6 +67,10 @@
 
     <!-- Today -->
     <section class="view" id="view-today">
+      <section class="install" id="installBox" hidden>
+        <p>Instalează Luna pe telefon ca s-o deschizi direct de pe ecranul principal, chiar și fără internet.</p>
+        <button type="button" class="btn btn-install" data-action="install">📲 Instalează aplicația</button>
+      </section>
       <article class="status" id="statusCard" data-kind="normal">
         <div class="ring">
           <div id="ring"></div>
@@ -157,6 +161,11 @@
           </div>
         </div>
         <p class="hint">Aceste valori se folosesc până când Luna are destule date. După aceea, estimările vin din istoricul tău.</p>
+      </section>
+
+      <section class="panel form" id="installSettings" hidden>
+        <h2 class="section-title">Instalare</h2>
+        <button type="button" class="btn btn-install" data-action="install">📲 Instalează aplicația</button>
       </section>
 
       <section class="panel form">
