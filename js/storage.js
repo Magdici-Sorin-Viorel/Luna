@@ -5,10 +5,11 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'luna.v1';
+  const STORAGE_KEY = 'luna.v1'; // key kept across versions; the payload carries `version`
 
   const DEFAULTS = {
-    version: 1,
+    version: 2,
+    profile: { name: '' },
     settings: { cycleLength: 28, periodLength: 5 },
     days: [],       // ISO dates (YYYY-MM-DD) marked as period days
     ongoing: false, // true while a period is in progress (auto-extends daily)
@@ -32,10 +33,13 @@
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
   }
 
-  /** Coerces any loaded/imported object into a valid data shape. */
+  /** Coerces any loaded/imported object (v1 or v2) into a valid data shape. */
   function normalize(raw) {
     const data = clone(DEFAULTS);
     if (!raw || typeof raw !== 'object') return data;
+
+    const profile = raw.profile || {};
+    data.profile.name = typeof profile.name === 'string' ? profile.name.trim().slice(0, 40) : '';
 
     const settings = raw.settings || {};
     data.settings.cycleLength = clampInt(settings.cycleLength, 15, 60, 28);

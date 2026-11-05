@@ -2,7 +2,7 @@
 
 A simple menstrual cycle calendar (PWA). The interface is in Romanian.
 
-- Tracks period days and predicts the next cycle from the average of the last 3–6 cycles.
+- Logs first and last day of each period; predicts the next one with a recency-weighted mean of the last 12 cycles, median/MAD outlier rejection and a confidence window that narrows as more cycles are recorded.
 - Shows 3 preparation days before each predicted period, with short practical tips.
 - Installable on the phone (works offline).
 - Exports upcoming cycles to the phone calendar (.ics), so the calendar app sends the reminders.
@@ -14,7 +14,7 @@ A simple menstrual cycle calendar (PWA). The interface is in Romanian.
 index.html            App markup
 css/style.css         Styles (light and dark theme)
 js/storage.js         Local persistence, export/import
-js/cycle.js           Cycle logic: periods, averages, status, predictions
+js/cycle.js           Cycle logic: periods, robust statistics, status, predictions
 js/ics.js             Calendar export (.ics) for phone reminders
 js/app.js             UI rendering and events
 sw.js                 Service worker (offline cache)

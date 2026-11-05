@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Luna</title>
-  <meta name="description" content="Calendar simplu pentru ciclul menstrual, cu estimări și sugestii de pregătire. Datele rămân pe telefon.">
-  <meta name="theme-color" content="#f4ebe6" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1e1718" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Calendar simplu pentru ciclul menstrual: prima zi, ultima zi și o predicție tot mai precisă. Datele rămân pe telefon.">
+  <meta name="theme-color" content="#f5f2f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181321" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -14,201 +14,274 @@
   <meta name="apple-mobile-web-app-title" content="Luna">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Outfit:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Nunito+Sans:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <!-- APP:START -->
 <div class="app">
-  <header class="topbar">
-    <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="15" class="brand-disc"/>
-        <path d="M20.5 8.5a8.5 8.5 0 1 0 0 15 7 7 0 0 1 0-15z" class="brand-moon"/>
+
+  <!-- ===== Onboarding (first run) ===== -->
+  <section class="view onboarding" id="view-onboarding" hidden>
+    <div class="ob-progress" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <div class="ob-step" id="ob-step-1">
+      <svg class="ob-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="30" class="mark-disc"/>
+        <circle cx="30" cy="33" r="17" class="mark-moon"/>
+        <circle cx="39" cy="29" r="14" class="mark-cut"/>
       </svg>
-      <span class="brand-name">Luna</span>
-    </div>
-    <span class="topbar-date" id="todayLabel"></span>
-  </header>
-
-  <main class="views">
-    <!-- First run -->
-    <section class="view" id="view-onboarding" hidden>
-      <div class="onboarding">
-        <h1 class="display">Bun venit</h1>
-        <p class="lead">Luna învață ritmul ciclului tău și te anunță cu 3 zile înainte, ca să fii pregătită. Totul rămâne pe telefonul tău.</p>
-        <form class="panel form" id="obForm" novalidate>
-          <label class="field">
-            <span class="field-label">Când a început ultimul ciclu?</span>
-            <input type="date" id="obStart" required>
-          </label>
-          <div class="field">
-            <span class="field-label">Durata obișnuită a ciclului</span>
-            <div class="stepper">
-              <button type="button" data-field="cycleLength" data-step="-1" aria-label="Mai puțin">−</button>
-              <output id="obCycleValue">28</output><span class="unit">zile</span>
-              <button type="button" data-field="cycleLength" data-step="1" aria-label="Mai mult">+</button>
-            </div>
-          </div>
-          <div class="field">
-            <span class="field-label">Câte zile durează menstruația</span>
-            <div class="stepper">
-              <button type="button" data-field="periodLength" data-step="-1" aria-label="Mai puțin">−</button>
-              <output id="obPeriodValue">5</output><span class="unit">zile</span>
-              <button type="button" data-field="periodLength" data-step="1" aria-label="Mai mult">+</button>
-            </div>
-          </div>
-          <p class="hint">Nu știi exact? Lasă 28 și 5. Luna se ajustează singură după fiecare ciclu.</p>
-          <button type="submit" class="btn btn-primary">Începe</button>
-        </form>
-        <button type="button" class="btn btn-ghost" id="obDemo">Încearcă cu date de exemplu</button>
-      </div>
-    </section>
-
-    <!-- Today -->
-    <section class="view" id="view-today">
-      <section class="install" id="installBox" hidden>
-        <p>Instalează Luna pe telefon ca s-o deschizi direct de pe ecranul principal, chiar și fără internet.</p>
-        <button type="button" class="btn btn-install" data-action="install">📲 Instalează aplicația</button>
-      </section>
-      <article class="status" id="statusCard" data-kind="normal">
-        <div class="ring">
-          <div id="ring"></div>
-          <div class="ring-center">
-            <span class="ring-num" id="ringNum"></span>
-            <span class="ring-sub" id="ringSub"></span>
-          </div>
-        </div>
-        <p class="eyebrow" id="statusEyebrow"></p>
-        <h1 class="status-title" id="statusTitle"></h1>
-        <p class="status-detail" id="statusDetail"></p>
-        <button type="button" class="btn btn-primary" id="periodBtn"></button>
-      </article>
-
-      <section class="notice" id="calNotice" hidden>
-        <p>Estimarea s-a schimbat față de ultimul export în calendar. Actualizează-l ca notificările să vină la timp.</p>
-        <button type="button" class="btn btn-secondary" data-action="export-calendar">Actualizează calendarul</button>
-      </section>
-
-      <section class="tips" id="tipsBox" hidden>
-        <h2 class="section-title">Pregătește-te</h2>
-        <ul class="tips-list" id="tipsList"></ul>
-      </section>
-
-      <section class="block">
-        <h2 class="section-title">Media ta</h2>
-        <div class="averages">
-          <div class="avg"><span class="avg-num" id="avgCycle"></span><span class="avg-label">zile / ciclu</span></div>
-          <div class="avg"><span class="avg-num" id="avgPeriod"></span><span class="avg-label">zile menstruație</span></div>
-        </div>
-        <p class="hint" id="avgNote"></p>
-      </section>
-
-      <section class="block">
-        <h2 class="section-title">Următoarele cicluri</h2>
-        <ul class="upcoming" id="upcomingList"></ul>
-      </section>
-
-      <section class="block">
-        <h2 class="section-title">Istoric</h2>
-        <ol class="history" id="historyList"></ol>
-      </section>
-
-      <p class="disclaimer">Estimările sunt orientative. Luna nu este o metodă de contracepție și nu înlocuiește sfatul medicului.</p>
-    </section>
-
-    <!-- Calendar -->
-    <section class="view" id="view-calendar" hidden>
-      <div class="cal-head">
-        <button type="button" class="icon-btn" id="calPrev" aria-label="Luna anterioară">‹</button>
-        <h1 class="cal-title" id="calTitle"></h1>
-        <button type="button" class="icon-btn" id="calNext" aria-label="Luna următoare">›</button>
-      </div>
-      <div class="panel cal">
-        <div class="weekdays" aria-hidden="true">
-          <span>L</span><span>Ma</span><span>Mi</span><span>J</span><span>V</span><span>S</span><span>D</span>
-        </div>
-        <div class="grid" id="calGrid"></div>
-      </div>
-      <ul class="legend">
-        <li><span class="swatch swatch-period"></span>Menstruație</li>
-        <li><span class="swatch swatch-predicted"></span>Estimat</li>
-        <li><span class="swatch swatch-prep"></span>Pregătire</li>
-      </ul>
-      <p class="hint">Atinge o zi ca s-o marchezi sau s-o demarchezi ca zi de ciclu.</p>
-      <button type="button" class="btn btn-ghost" id="calToday">Mergi la luna curentă</button>
-    </section>
-
-    <!-- Settings -->
-    <section class="view" id="view-settings" hidden>
-      <h1 class="display small">Setări</h1>
-
-      <section class="panel form">
-        <div class="field">
-          <span class="field-label">Durata obișnuită a ciclului</span>
-          <div class="stepper">
-            <button type="button" data-field="cycleLength" data-step="-1" aria-label="Mai puțin">−</button>
-            <output id="setCycleValue">28</output><span class="unit">zile</span>
-            <button type="button" data-field="cycleLength" data-step="1" aria-label="Mai mult">+</button>
-          </div>
-        </div>
-        <div class="field">
-          <span class="field-label">Durata obișnuită a menstruației</span>
-          <div class="stepper">
-            <button type="button" data-field="periodLength" data-step="-1" aria-label="Mai puțin">−</button>
-            <output id="setPeriodValue">5</output><span class="unit">zile</span>
-            <button type="button" data-field="periodLength" data-step="1" aria-label="Mai mult">+</button>
-          </div>
-        </div>
-        <p class="hint">Aceste valori se folosesc până când Luna are destule date. După aceea, estimările vin din istoricul tău.</p>
-      </section>
-
-      <section class="panel form" id="installSettings" hidden>
-        <h2 class="section-title">Instalare</h2>
-        <button type="button" class="btn btn-install" data-action="install">📲 Instalează aplicația</button>
-      </section>
-
-      <section class="panel form">
-        <h2 class="section-title">Notificări</h2>
-        <p class="hint">Adaugă următoarele 3 cicluri în calendarul telefonului. Calendarul îți trimite notificare în prima zi de pregătire și în ziua estimată.</p>
-        <button type="button" class="btn btn-primary" data-action="export-calendar">Adaugă în calendarul telefonului</button>
-        <p class="hint" id="calSyncInfo"></p>
-      </section>
-
-      <section class="panel form">
-        <h2 class="section-title">Backup</h2>
-        <p class="hint">Datele stau doar pe acest telefon. Fă un backup înainte să schimbi telefonul sau browserul.</p>
-        <button type="button" class="btn btn-secondary" id="exportBtn">Exportă datele</button>
-        <div class="export" id="exportPanel" hidden>
-          <textarea id="exportText" rows="6" readonly aria-label="Backup în format text"></textarea>
-          <div class="row">
-            <button type="button" class="btn btn-secondary" id="copyBtn">Copiază</button>
-            <button type="button" class="btn btn-secondary" id="downloadBtn">Descarcă fișierul</button>
-          </div>
-        </div>
-        <label class="btn btn-secondary file-btn">
-          Importă din fișier
-          <input type="file" id="importFile" accept="application/json,.json">
+      <h1 class="display">Bun venit în Luna</h1>
+      <p class="lead">Notezi prima și ultima zi a ciclului. Luna învață ritmul tău și îți spune din timp când vine următorul. Totul rămâne pe telefonul tău.</p>
+      <form class="stack" id="obNameForm" novalidate>
+        <label class="field">
+          <span class="field-label">Cum te cheamă?</span>
+          <input type="text" id="obName" maxlength="40" autocomplete="given-name" placeholder="Numele tău">
         </label>
-        <textarea id="importText" rows="3" placeholder="…sau lipește aici textul unui backup" aria-label="Text backup pentru import"></textarea>
-        <button type="button" class="btn btn-ghost" id="importTextBtn">Importă din text</button>
-      </section>
+        <button type="submit" class="btn btn-primary">Continuă</button>
+      </form>
+    </div>
 
-      <section class="panel form">
-        <h2 class="section-title">Ștergere</h2>
-        <button type="button" class="btn btn-danger" id="deleteBtn">Șterge toate datele</button>
-        <div class="confirm" id="confirmDelete" hidden>
-          <p>Sigur? Toate zilele marcate vor fi șterse de pe acest telefon. Acțiunea nu poate fi anulată.</p>
-          <div class="row">
-            <button type="button" class="btn btn-secondary" id="cancelDelete">Anulează</button>
-            <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Da, șterge</button>
-          </div>
-        </div>
-      </section>
+    <div class="ob-step" id="ob-step-2" hidden>
+      <h1 class="display">Ciclurile din ultimele luni</h1>
+      <p class="lead">Completează prima și ultima zi pentru lunile pe care le știi. Cu 2 luni Luna începe să estimeze, cu 4–6 luni estimarea devine precisă.</p>
+      <form class="stack" id="obCycleForm" novalidate>
+        <div class="month-rows" id="obMonths"></div>
+        <p class="hint">Dacă ciclul din luna asta e încă în desfășurare, lasă „Ultima zi” goală.</p>
+        <button type="submit" class="btn btn-primary" id="obSave">Salvează și continuă</button>
+        <button type="button" class="btn btn-secondary" id="obSkip">Nu am datele, sar peste</button>
+      </form>
+    </div>
 
-      <p class="disclaimer">Luna estimează pe baza istoricului tău. Nu este o metodă de contracepție și nu înlocuiește sfatul medicului. Datele nu părăsesc niciodată acest dispozitiv.</p>
+    <div class="ob-step" id="ob-step-3" hidden>
+      <h1 class="display" id="obDoneTitle">Gata</h1>
+      <p class="lead" id="obDoneText"></p>
+      <ul class="ob-howto">
+        <li><b>Când începe ciclul</b>, apasă „A început ciclul” pe ecranul Azi.</li>
+        <li><b>Când se termină</b>, apasă „S-a terminat”. Atât.</li>
+        <li>Poți corecta oricând o zi din Calendar.</li>
+      </ul>
+      <button type="button" class="btn btn-primary" id="obFinish">Deschide Luna</button>
+    </div>
+  </section>
+
+  <!-- ===== Today ===== -->
+  <section class="view" id="view-today">
+    <header class="greeting">
+      <div>
+        <p class="greeting-hi" id="greetingHi"></p>
+        <p class="greeting-date" id="todayLabel"></p>
+      </div>
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="30" class="mark-disc"/>
+        <circle cx="30" cy="33" r="17" class="mark-moon"/>
+        <circle cx="39" cy="29" r="14" class="mark-cut"/>
+      </svg>
+    </header>
+
+    <section class="install" id="installBox" hidden>
+      <p>Instalează Luna pe telefon ca s-o deschizi de pe ecranul principal, chiar și fără internet.</p>
+      <button type="button" class="btn btn-install" data-action="install">Instalează aplicația</button>
     </section>
-  </main>
+
+    <article class="hero" id="hero" data-kind="normal">
+      <p class="hero-eyebrow" id="heroEyebrow"></p>
+      <h1 class="hero-title" id="heroTitle"></h1>
+      <p class="hero-detail" id="heroDetail"></p>
+
+      <div class="timeline" id="timeline" aria-hidden="true"></div>
+      <p class="timeline-caption" id="timelineCaption"></p>
+
+      <div class="hero-actions">
+        <button type="button" class="btn btn-primary" id="primaryBtn"></button>
+        <button type="button" class="btn btn-link" id="secondaryBtn"></button>
+      </div>
+
+      <form class="pick" id="pickForm" hidden>
+        <label class="field">
+          <span class="field-label" id="pickLabel"></span>
+          <input type="date" id="pickDate">
+        </label>
+        <div class="row">
+          <button type="button" class="btn btn-secondary" id="pickCancel">Anulează</button>
+          <button type="submit" class="btn btn-primary" id="pickSave">Salvează</button>
+        </div>
+      </form>
+    </article>
+
+    <section class="confidence" id="confidenceBox">
+      <div class="confidence-head">
+        <span class="chip" id="confidenceChip"></span>
+        <span class="confidence-count" id="confidenceCount"></span>
+      </div>
+      <p class="hint" id="confidenceText"></p>
+    </section>
+
+    <section class="notice" id="calNotice" hidden>
+      <p>Estimarea s-a schimbat față de ultimul export în calendar. Actualizează-l ca notificările să vină la timp.</p>
+      <button type="button" class="btn btn-secondary" data-action="export-calendar">Actualizează calendarul</button>
+    </section>
+
+    <section class="tips" id="tipsBox" hidden>
+      <h2 class="section-title">Pregătește-te</h2>
+      <ul class="tips-list" id="tipsList"></ul>
+    </section>
+
+    <section class="block">
+      <h2 class="section-title">Ce urmează</h2>
+      <ul class="upcoming" id="upcomingList"></ul>
+    </section>
+
+    <p class="disclaimer">Estimările sunt orientative. Luna nu este o metodă de contracepție și nu înlocuiește sfatul medicului.</p>
+  </section>
+
+  <!-- ===== Calendar ===== -->
+  <section class="view" id="view-calendar" hidden>
+    <div class="cal-head">
+      <button type="button" class="icon-btn" id="calPrev" aria-label="Luna anterioară">‹</button>
+      <h1 class="cal-title" id="calTitle"></h1>
+      <button type="button" class="icon-btn" id="calNext" aria-label="Luna următoare">›</button>
+    </div>
+    <div class="panel cal">
+      <div class="weekdays" aria-hidden="true">
+        <span>L</span><span>Ma</span><span>Mi</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="grid" id="calGrid"></div>
+    </div>
+    <ul class="legend">
+      <li><span class="swatch swatch-period"></span>Ciclu</li>
+      <li><span class="swatch swatch-predicted"></span>Estimat</li>
+      <li><span class="swatch swatch-window"></span>Interval probabil</li>
+      <li><span class="swatch swatch-prep"></span>Pregătire</li>
+    </ul>
+    <p class="hint">Atinge o zi ca să notezi sau să corectezi ciclul.</p>
+    <button type="button" class="btn btn-ghost" id="calToday">Mergi la luna curentă</button>
+
+    <div class="sheet-backdrop" id="daySheet" hidden>
+      <div class="sheet" role="dialog" aria-labelledby="sheetTitle">
+        <h2 class="sheet-title" id="sheetTitle"></h2>
+        <p class="hint" id="sheetInfo"></p>
+        <div class="stack">
+          <button type="button" class="btn btn-primary" data-day-action="start">Prima zi a ciclului</button>
+          <button type="button" class="btn btn-secondary" data-day-action="end">Ultima zi a ciclului</button>
+          <button type="button" class="btn btn-secondary" data-day-action="toggle" id="sheetToggle"></button>
+          <button type="button" class="btn btn-link" data-day-action="close">Închide</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== History ===== -->
+  <section class="view" id="view-history" hidden>
+    <h1 class="display small">Istoric</h1>
+
+    <div class="stats" id="statsGrid"></div>
+    <p class="hint" id="statsNote"></p>
+
+    <section class="block">
+      <h2 class="section-title">Ciclurile tale</h2>
+      <ol class="cycles" id="cycleList"></ol>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Adaugă un ciclu trecut</h2>
+      <p class="hint">Dacă ții minte cicluri mai vechi, adaugă-le aici. Fiecare ciclu în plus face predicția mai precisă.</p>
+      <form class="stack" id="addCycleForm" novalidate>
+        <div class="row">
+          <label class="field"><span class="field-label">Prima zi</span><input type="date" id="addStart" required></label>
+          <label class="field"><span class="field-label">Ultima zi</span><input type="date" id="addEnd"></label>
+        </div>
+        <button type="submit" class="btn btn-secondary">Adaugă ciclul</button>
+      </form>
+    </section>
+  </section>
+
+  <!-- ===== Settings ===== -->
+  <section class="view" id="view-settings" hidden>
+    <h1 class="display small">Setări</h1>
+
+    <section class="panel stack">
+      <label class="field">
+        <span class="field-label">Numele tău</span>
+        <input type="text" id="setName" maxlength="40" autocomplete="given-name">
+      </label>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Ciclurile pe luni</h2>
+      <p class="hint">Prima și ultima zi a ciclului din fiecare lună. Completează lunile lipsă sau corectează-le pe cele notate; golește ambele câmpuri ca să ștergi un ciclu.</p>
+      <form class="stack" id="setCycleForm" novalidate>
+        <div class="month-rows" id="setMonths"></div>
+        <button type="submit" class="btn btn-primary">Salvează ciclurile</button>
+      </form>
+    </section>
+
+    <section class="panel stack" id="installSettings" hidden>
+      <h2 class="section-title">Instalare</h2>
+      <button type="button" class="btn btn-install" data-action="install">Instalează aplicația</button>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Valori de pornire</h2>
+      <p class="hint">Se folosesc doar până când Luna are destule cicluri notate. După aceea, estimările vin din istoricul tău.</p>
+      <div class="field">
+        <span class="field-label">Durata ciclului</span>
+        <div class="stepper">
+          <button type="button" data-field="cycleLength" data-step="-1" aria-label="Mai puțin">−</button>
+          <output id="setCycleValue">28</output><span class="unit">zile</span>
+          <button type="button" data-field="cycleLength" data-step="1" aria-label="Mai mult">+</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">Durata menstruației</span>
+        <div class="stepper">
+          <button type="button" data-field="periodLength" data-step="-1" aria-label="Mai puțin">−</button>
+          <output id="setPeriodValue">5</output><span class="unit">zile</span>
+          <button type="button" data-field="periodLength" data-step="1" aria-label="Mai mult">+</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Notificări</h2>
+      <p class="hint">Adaugă următoarele 3 cicluri în calendarul telefonului. Calendarul îți trimite notificare în prima zi de pregătire și în ziua estimată.</p>
+      <button type="button" class="btn btn-primary" data-action="export-calendar">Adaugă în calendarul telefonului</button>
+      <p class="hint" id="calSyncInfo"></p>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Backup</h2>
+      <p class="hint">Datele stau doar pe acest telefon. Fă un backup înainte să schimbi telefonul sau browserul.</p>
+      <button type="button" class="btn btn-secondary" id="exportBtn">Exportă datele</button>
+      <div class="stack" id="exportPanel" hidden>
+        <textarea id="exportText" rows="6" readonly aria-label="Backup în format text"></textarea>
+        <div class="row">
+          <button type="button" class="btn btn-secondary" id="copyBtn">Copiază</button>
+          <button type="button" class="btn btn-secondary" id="downloadBtn">Descarcă fișierul</button>
+        </div>
+      </div>
+      <label class="btn btn-secondary file-btn">
+        Importă din fișier
+        <input type="file" id="importFile" accept="application/json,.json">
+      </label>
+      <textarea id="importText" rows="3" placeholder="…sau lipește aici textul unui backup" aria-label="Text backup pentru import"></textarea>
+      <button type="button" class="btn btn-ghost" id="importTextBtn">Importă din text</button>
+    </section>
+
+    <section class="panel stack">
+      <h2 class="section-title">Ștergere</h2>
+      <button type="button" class="btn btn-danger" id="deleteBtn">Șterge toate datele</button>
+      <div class="confirm" id="confirmDelete" hidden>
+        <p>Sigur? Toate datele vor fi șterse de pe acest telefon. Acțiunea nu poate fi anulată.</p>
+        <div class="row">
+          <button type="button" class="btn btn-secondary" id="cancelDelete">Anulează</button>
+          <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Da, șterge</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="disclaimer">Luna estimează pe baza istoricului tău. Nu este o metodă de contracepție și nu înlocuiește sfatul medicului. Datele nu părăsesc niciodată acest dispozitiv.</p>
+  </section>
 
   <nav class="tabbar" id="tabbar" aria-label="Navigare">
     <button type="button" class="tab is-active" data-view="today">
@@ -218,6 +291,10 @@
     <button type="button" class="tab" data-view="calendar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
       <span>Calendar</span>
+    </button>
+    <button type="button" class="tab" data-view="history">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16v-5M10 16V7M14 16v-3M18 16V9"/></svg>
+      <span>Istoric</span>
     </button>
     <button type="button" class="tab" data-view="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/><circle cx="9" cy="7" r="2" class="fill"/><circle cx="15" cy="12" r="2" class="fill"/><circle cx="8" cy="17" r="2" class="fill"/></svg>
