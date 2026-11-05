@@ -8,6 +8,7 @@
   const Store = window.LunaStorage;
   const Cycle = window.LunaCycle;
   const ICS = window.LunaICS;
+  const QR = window.LunaQR;
 
   const CALENDAR_EVENTS = 3; // predicted cycles included in the calendar export
   const CYCLES_FOR_GOOD_PREDICTION = 3;
@@ -691,9 +692,45 @@
     if (!$('setMonths').contains(document.activeElement)) renderMonthEditor($('setMonths'), Cycle.today());
     $('setCycleValue').textContent = data.settings.cycleLength;
     $('setPeriodValue').textContent = data.settings.periodLength;
+    renderShare();
     $('calSyncInfo').textContent = data.calendarSyncedFor
       ? `Ultimul export include ciclul estimat pe ${formatShort(data.calendarSyncedFor, true)}.`
       : 'Nu ai exportat încă în calendar.';
+  }
+
+  /** The app's own address, without query string or hash, for sharing. */
+  function appUrl() {
+    return `${location.origin}${location.pathname}`;
+  }
+
+  let renderedShareUrl = null;
+
+  function renderShare() {
+    const url = appUrl();
+    if (url === renderedShareUrl) return;
+    renderedShareUrl = url;
+    $('shareUrl').value = url;
+    $('qrBox').innerHTML = QR.toSVG(url, '#2a2135');
+    $('shareLinkBtn').hidden = !(navigator.share);
+  }
+
+  function copyText(text, doneMessage, input) {
+    const fallback = () => {
+      if (input) { input.focus(); input.select(); }
+      showToast('Textul e selectat. Copiază-l manual.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => showToast(doneMessage)).catch(fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function shareLink() {
+    if (!navigator.share) { copyText(appUrl(), 'Link copiat.', $('shareUrl')); return; }
+    navigator.share({ title: 'Luna', text: 'Luna, calendar pentru ciclul menstrual', url: appUrl() }).catch(() => {
+      // The user closed the share sheet; nothing to do.
+    });
   }
 
   const LIMITS = { cycleLength: [15, 60], periodLength: [1, 10] };
@@ -749,19 +786,7 @@
   }
 
   function copyExport() {
-    const area = $('exportText');
-    const fallback = () => {
-      area.focus();
-      area.select();
-      showToast('Textul e selectat. Copiază-l manual.');
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(area.value)
-        .then(() => showToast('Copiat. Păstrează textul într-un loc sigur.'))
-        .catch(fallback);
-    } else {
-      fallback();
-    }
+    copyText($('exportText').value, 'Copiat. Păstrează textul într-un loc sigur.', $('exportText'));
   }
 
   function downloadExport() {
@@ -897,6 +922,9 @@
     document.querySelectorAll('[data-action="export-calendar"]').forEach((btn) => {
       btn.addEventListener('click', exportCalendar);
     });
+    $('copyLinkBtn').addEventListener('click', () => copyText(appUrl(), 'Link copiat.', $('shareUrl')));
+    $('shareLinkBtn').addEventListener('click', shareLink);
+    $('shareUrl').addEventListener('focus', (e) => e.target.select());
     $('exportBtn').addEventListener('click', openExport);
     $('copyBtn').addEventListener('click', copyExport);
     $('downloadBtn').addEventListener('click', downloadExport);

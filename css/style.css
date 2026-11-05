@@ -531,6 +531,18 @@ textarea { resize: vertical; font-size: 0.85rem; font-family: ui-monospace, 'SFM
 .cycle-sub { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; }
 .cycle-del { grid-column: 3; justify-self: end; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 0.8rem; padding: 0; }
 
+/* ---------- Share ---------- */
+.qr {
+  width: min(240px, 100%);
+  margin: 0 auto;
+  padding: 10px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+}
+.qr svg { display: block; width: 100%; height: auto; }
+.share-link input { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
 /* ---------- Tab bar ---------- */
 .tabbar {
   position: fixed;

@@ -243,6 +243,19 @@
     </section>
 
     <section class="panel stack">
+      <h2 class="section-title">Deschide pe alt telefon</h2>
+      <p class="hint">Scanează codul cu camera telefonului ca să deschizi Luna, sau trimite linkul. Fiecare telefon are datele lui; ale tale nu se trimit.</p>
+      <div class="qr" id="qrBox"></div>
+      <div class="share-link">
+        <input type="text" id="shareUrl" readonly aria-label="Linkul aplicației">
+      </div>
+      <div class="row">
+        <button type="button" class="btn btn-secondary" id="copyLinkBtn">Copiază linkul</button>
+        <button type="button" class="btn btn-secondary" id="shareLinkBtn">Trimite</button>
+      </div>
+    </section>
+
+    <section class="panel stack">
       <h2 class="section-title">Notificări</h2>
       <p class="hint">Adaugă următoarele 3 cicluri în calendarul telefonului. Calendarul îți trimite notificare în prima zi de pregătire și în ziua estimată.</p>
       <button type="button" class="btn btn-primary" data-action="export-calendar">Adaugă în calendarul telefonului</button>
@@ -308,6 +321,7 @@
 <script src="js/storage.js"></script>
 <script src="js/cycle.js"></script>
 <script src="js/ics.js"></script>
+<script src="js/qr.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

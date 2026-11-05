@@ -16,6 +16,7 @@ css/style.css         Styles (light and dark theme)
 js/storage.js         Local persistence, export/import
 js/cycle.js           Cycle logic: periods, robust statistics, status, predictions
 js/ics.js             Calendar export (.ics) for phone reminders
+js/qr.js              QR code encoder for the share screen (no dependencies)
 js/app.js             UI rendering and events
 sw.js                 Service worker (offline cache)
 manifest.webmanifest  PWA manifest
