@@ -2,7 +2,7 @@
 
 A simple menstrual cycle calendar (PWA). The interface is in Romanian.
 
-- Logs first and last day of each period; predicts the next one with a recency-weighted mean of the last 12 cycles, median/MAD outlier rejection and a confidence window that narrows as more cycles are recorded.
+- Logs the first day of each period (the last day is optional; the typical duration comes from Settings or from recorded last days). Predicts the next first day with a recency-weighted mean of the last 12 cycles, median/MAD outlier rejection and a confidence window that narrows as more cycles are recorded.
 - Shows 3 preparation days before each predicted period, with short practical tips.
 - Installable on the phone (works offline).
 - Exports upcoming cycles to the phone calendar (.ics), so the calendar app sends the reminders.

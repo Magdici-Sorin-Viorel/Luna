@@ -8,11 +8,10 @@
   const STORAGE_KEY = 'luna.v1'; // key kept across versions; the payload carries `version`
 
   const DEFAULTS = {
-    version: 2,
+    version: 3,
     profile: { name: '' },
     settings: { cycleLength: 28, periodLength: 5 },
-    days: [],       // ISO dates (YYYY-MM-DD) marked as period days
-    ongoing: false, // true while a period is in progress (auto-extends daily)
+    periods: [],             // [{ start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' | null }], end is optional
     calendarSyncedFor: null, // predicted start date included in the last calendar export
   };
 
@@ -33,7 +32,37 @@
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
   }
 
-  /** Coerces any loaded/imported object (v1 or v2) into a valid data shape. */
+  /** Older backups stored every period day; turn consecutive days into periods. */
+  function periodsFromDays(days, ongoing) {
+    const sorted = [...new Set(days.filter(isISODate))].sort();
+    const periods = [];
+    const next = (iso) => {
+      const [y, m, d] = iso.split('-').map(Number);
+      const date = new Date(y, m - 1, d + 1);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
+    for (const day of sorted) {
+      const last = periods[periods.length - 1];
+      if (last && next(last.end) === day) last.end = day;
+      else periods.push({ start: day, end: day });
+    }
+    // A period that was still running has no confirmed end.
+    if (ongoing && periods.length) periods[periods.length - 1].end = null;
+    return periods;
+  }
+
+  /** Keeps one period per start date, sorted, with valid optional ends. */
+  function cleanPeriods(list) {
+    const byStart = new Map();
+    list.forEach((p) => {
+      if (!p || !isISODate(p.start)) return;
+      const end = isISODate(p.end) && p.end >= p.start ? p.end : null;
+      byStart.set(p.start, { start: p.start, end });
+    });
+    return [...byStart.values()].sort((a, b) => (a.start < b.start ? -1 : 1));
+  }
+
+  /** Coerces any loaded/imported object (v1, v2 or v3) into a valid data shape. */
   function normalize(raw) {
     const data = clone(DEFAULTS);
     if (!raw || typeof raw !== 'object') return data;
@@ -45,10 +74,11 @@
     data.settings.cycleLength = clampInt(settings.cycleLength, 15, 60, 28);
     data.settings.periodLength = clampInt(settings.periodLength, 1, 10, 5);
 
-    if (Array.isArray(raw.days)) {
-      data.days = [...new Set(raw.days.filter(isISODate))].sort();
+    if (Array.isArray(raw.periods)) {
+      data.periods = cleanPeriods(raw.periods);
+    } else if (Array.isArray(raw.days)) {
+      data.periods = periodsFromDays(raw.days, Boolean(raw.ongoing));
     }
-    data.ongoing = Boolean(raw.ongoing);
     data.calendarSyncedFor = isISODate(raw.calendarSyncedFor) ? raw.calendarSyncedFor : null;
     return data;
   }
@@ -91,7 +121,7 @@
   /** Parses a backup file. Throws when the content is not a Luna backup. */
   function importJSON(text) {
     const raw = JSON.parse(text);
-    if (!raw || !Array.isArray(raw.days)) throw new Error('Invalid backup');
+    if (!raw || !(Array.isArray(raw.periods) || Array.isArray(raw.days))) throw new Error('Invalid backup');
     return normalize(raw);
   }
 
