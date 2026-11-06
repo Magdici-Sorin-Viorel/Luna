@@ -29,8 +29,7 @@
 (function () {
   'use strict';
 
-  const MIN_CYCLE = 15;     // cycles outside this range are ignored as data errors
-  const MAX_CYCLE = 60;
+  const MAX_CYCLE = 60;         // upper bound for a plausible cycle (used for history bars)
   const MAX_PERIOD = 15;    // a recorded period longer than this is treated as an input error
   const HISTORY_SIZE = 12;  // how many recent cycles feed the model
   const DECAY = 0.8;        // weight multiplier per cycle of age (1, 0.8, 0.64, ...)

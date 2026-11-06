@@ -609,15 +609,15 @@
     const stats = [];
     stats.push({ num: analysis.avgCycle, unit: 'zile', label: analysis.learned ? 'ciclul tău, în medie' : 'ciclu (valoare de pornire)' });
     stats.push({ num: analysis.avgPeriod, unit: 'zile', label: analysis.periodLearned ? 'menstruația, în medie' : 'menstruația (din Setări)' });
-    if (analysis.cycleCount >= 2) {
+    if (analysis.learned) {
       stats.push({ num: `${analysis.shortest}–${analysis.longest}`, unit: 'zile', label: 'cel mai scurt – cel mai lung' });
       stats.push({ num: `±${analysis.sd.toFixed(1)}`, unit: 'zile', label: 'variație' });
     }
     $('statsGrid').innerHTML = stats.map((s) => `
       <div class="stat"><span class="stat-num">${s.num}<small>${s.unit}</small></span><span class="stat-label">${s.label}</span></div>`).join('');
-    $('statsNote').textContent = analysis.cycleCount >= CYCLES_FOR_GOOD_PREDICTION
+    $('statsNote').textContent = analysis.learned
       ? `Calculat din ultimele ${cyclesText(analysis.cycleCount)}. Ciclurile recente cântăresc mai mult.`
-      : 'Cu cel puțin 3 cicluri notate, Luna poate estima bine. Cu 6 sau mai multe, estimarea devine stabilă.';
+      : 'Cu cel puțin 3 cicluri consecutive notate, Luna trece la ritmul tău. Cu 6 sau mai multe, estimarea devine stabilă.';
 
     const periods = analysis.periods;
     const dropped = analysis.droppedValues; // cycle lengths rejected as outliers
