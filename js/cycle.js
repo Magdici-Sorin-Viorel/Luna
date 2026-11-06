@@ -1,11 +1,23 @@
 /*
- * Cycle logic: date helpers, grouping of marked days into periods,
- * robust statistics, current status and predictions with a confidence window.
+ * Cycle logic: date helpers, period resolution, robust statistics,
+ * current status and predictions with a confidence window.
  * Pure functions, no DOM access.
+ *
+ * Data model
+ * ----------
+ * The user records the FIRST day of each period. The last day is optional:
+ * when it is missing, the period is assumed to last the user's typical
+ * duration (learned from the periods whose end was recorded, otherwise the
+ * value from Settings). Everything that matters for prediction comes from
+ * first days only.
  *
  * Prediction model
  * ----------------
- * 1. Cycle lengths = gaps between consecutive period start dates.
+ * 1. The next first day = last first day + the cycle length. That length is the
+ *    value from Settings (28 by default) until at least three consistent cycles
+ *    are recorded; only then is it replaced by the learned rhythm. Entries are
+ *    often sparse, so a gap close to 2× or 3× the length is read as that many
+ *    cycles, and a gap that matches no multiple is ignored as unreliable.
  * 2. Outliers are rejected with a median/MAD test (robust to one odd month),
  *    but only once there are enough cycles to tell an outlier from normal variation.
  * 3. The expected length is an exponentially weighted mean of the remaining
@@ -17,14 +29,16 @@
 (function () {
   'use strict';
 
-  const MERGE_GAP = 1;      // only consecutive marked days belong to the same period
   const MIN_CYCLE = 15;     // cycles outside this range are ignored as data errors
   const MAX_CYCLE = 60;
+  const MAX_PERIOD = 15;    // a recorded period longer than this is treated as an input error
   const HISTORY_SIZE = 12;  // how many recent cycles feed the model
   const DECAY = 0.8;        // weight multiplier per cycle of age (1, 0.8, 0.64, ...)
   const PREP_DAYS = 3;      // preparation window before a predicted period
-  const MAX_ONGOING = 10;   // an open period stops auto-extending after this many days
   const DEFAULT_WINDOW = 4; // +/- days when nothing is known yet
+  const GAP_TOLERANCE = 10;     // days a gap may differ from k × reference and still count as k cycles
+  const MIN_TRUSTED_CYCLES = 3; // the learned rhythm replaces the Settings value only from here on
+  const MAX_TRUSTED_SD = 4;     // ...and only while the cycles are reasonably consistent
 
   /* ---------- Date helpers (local dates, ISO strings) ---------- */
 
@@ -112,101 +126,111 @@
 
   /* ---------- Periods ---------- */
 
-  /** Groups marked days into periods: [{ start, end, length }]. */
-  function groupPeriods(days) {
-    const sorted = [...new Set(days)].sort();
-    const periods = [];
-    for (const day of sorted) {
-      const last = periods[periods.length - 1];
-      if (last && daysBetween(last.end, day) <= MERGE_GAP) {
-        last.end = day;
-      } else {
-        periods.push({ start: day, end: day });
-      }
-    }
-    periods.forEach((p) => { p.length = daysBetween(p.start, p.end) + 1; });
-    return periods;
+  /** Typical period length: learned from recorded last days, else the setting. */
+  function typicalPeriodLength(data) {
+    const known = data.periods
+      .filter((p) => p.end)
+      .map((p) => daysBetween(p.start, p.end) + 1)
+      .filter((n) => n >= 1 && n <= MAX_PERIOD)
+      .slice(-HISTORY_SIZE);
+    return known.length ? Math.max(1, Math.round(weightedMean(known))) : data.settings.periodLength;
   }
 
   /**
-   * While a period is marked as ongoing, fill in every day up to today.
-   * Mutates data; returns true when something changed.
+   * Periods with their end resolved: recorded, or assumed from the typical length
+   * (never running into the next period). Sorted by start, oldest first.
+   * Each item: { start, end, length, endKnown }.
    */
-  function syncOngoing(data, todayISO) {
-    if (!data.ongoing) return false;
-    const periods = groupPeriods(data.days);
-    const last = periods[periods.length - 1];
-    if (!last) {
-      data.ongoing = false;
-      return true;
-    }
-    const span = daysBetween(last.start, todayISO) + 1;
-    if (span < 1 || span > MAX_ONGOING) {
-      data.ongoing = false;
-      return true;
-    }
-    let changed = false;
-    let day = last.end;
-    while (daysBetween(day, todayISO) > 0) {
-      day = addDays(day, 1);
-      data.days.push(day);
-      changed = true;
-    }
-    if (changed) data.days.sort();
-    return changed;
+  function resolvePeriods(data, typicalLength) {
+    const sorted = [...data.periods].sort((a, b) => (a.start < b.start ? -1 : 1));
+    return sorted.map((p, i) => {
+      const next = sorted[i + 1];
+      let end = p.end;
+      if (!end) {
+        end = addDays(p.start, typicalLength - 1);
+        if (next && end >= next.start) end = addDays(next.start, -1);
+      }
+      return { start: p.start, end, length: daysBetween(p.start, end) + 1, endKnown: Boolean(p.end) };
+    });
   }
 
   /* ---------- Analysis ---------- */
 
   /**
-   * Learns the user's rhythm from history, falling back to settings.
-   * Returns averages, the prediction window and a confidence level.
+   * Learns the user's rhythm from first days, falling back to settings.
+   * Returns resolved periods, averages, the prediction window and a confidence level.
    */
   function analyze(data) {
-    const periods = groupPeriods(data.days);
+    const avgPeriod = typicalPeriodLength(data);
+    const periods = resolvePeriods(data, avgPeriod);
 
-    // Cycle lengths between consecutive starts, oldest first.
-    const allCycles = [];
-    for (let i = 1; i < periods.length; i++) {
-      const length = daysBetween(periods[i - 1].start, periods[i].start);
-      if (length >= MIN_CYCLE && length <= MAX_CYCLE) allCycles.push(length);
+    // Gaps between consecutive first days, oldest first.
+    const gaps = [];
+    for (let i = 1; i < periods.length; i++) gaps.push(daysBetween(periods[i - 1].start, periods[i].start));
+
+    /**
+     * Reads the gaps against a reference length. Entries are often sparse
+     * ("I forgot that month"), so a gap close to k × reference is read as k cycles,
+     * and a gap that matches no multiple is ignored as unreliable.
+     */
+    const readGaps = (reference) => {
+      const cycles = [];
+      gaps.forEach((g) => {
+        let best = null;
+        for (let k = 1; k <= 3; k++) {
+          const each = g / k;
+          const diff = Math.abs(each - reference);
+          if (diff <= GAP_TOLERANCE && (!best || diff < best.diff)) best = { length: Math.round(each), span: k, diff };
+        }
+        if (best) cycles.push({ length: best.length, span: best.span });
+      });
+      return cycles;
+    };
+
+    /** The learned length, or null while the data is too scarce or too irregular to trust. */
+    const learnFrom = (cycles) => {
+      const recent = cycles.slice(-HISTORY_SIZE).map((c) => c.length);
+      const { kept, dropped } = rejectOutliers(recent);
+      const sd = stdDev(kept);
+      const trusted = kept.length >= MIN_TRUSTED_CYCLES && sd <= MAX_TRUSTED_SD;
+      return { kept, dropped, sd, learned: trusted ? Math.round(weightedMean(kept)) : null };
+    };
+
+    // Pass 1 against the Settings value; pass 2 against the learned rhythm, if any,
+    // so that someone with 35-day cycles is not read as skipping months.
+    let cycles = readGaps(data.settings.cycleLength);
+    let fit = learnFrom(cycles);
+    if (fit.learned !== null && fit.learned !== data.settings.cycleLength) {
+      cycles = readGaps(fit.learned);
+      fit = learnFrom(cycles);
     }
-    const recent = allCycles.slice(-HISTORY_SIZE);
-    const { kept, dropped } = rejectOutliers(recent);
-
-    const learned = kept.length >= 1;
-    const avgCycle = learned ? Math.round(weightedMean(kept)) : data.settings.cycleLength;
-    const sd = stdDev(kept);
+    const { kept, dropped, sd } = fit;
+    const allCycles = cycles;
+    const learned = fit.learned !== null;
+    const avgCycle = learned ? fit.learned : data.settings.cycleLength;
 
     // Window: 1.5 sd, at least 1 day, never more than 7; wider while data is scarce.
     let window;
-    if (kept.length === 0) window = DEFAULT_WINDOW;
-    else if (kept.length === 1) window = 3;
-    else if (kept.length === 2) window = Math.max(2, Math.round(1.5 * sd));
-    else window = Math.max(1, Math.round(1.5 * sd));
-    window = Math.min(7, window);
+    if (!learned) window = Math.max(DEFAULT_WINDOW, Math.min(7, Math.round(1.5 * sd)));
+    else window = Math.min(7, Math.max(1, Math.round(1.5 * sd)));
 
     let confidence;
-    if (kept.length >= 6 && sd <= 2) confidence = 'high';
-    else if (kept.length >= 3 && sd <= 4) confidence = 'medium';
+    if (learned && kept.length >= 6 && sd <= 2) confidence = 'high';
+    else if (learned) confidence = 'medium';
     else confidence = 'low';
-
-    // Period length: an ongoing period is not finished, so it does not count.
-    const closed = data.ongoing ? periods.slice(0, -1) : periods;
-    const periodLengths = closed.slice(-HISTORY_SIZE).map((p) => p.length);
-    const avgPeriod = periodLengths.length
-      ? Math.max(1, Math.round(weightedMean(periodLengths)))
-      : data.settings.periodLength;
 
     return {
       periods,
-      cycles: allCycles,
+      cycles: allCycles.map((c) => c.length),
+      splitGaps: allCycles.filter((c) => c.span > 1).length,
+      ignoredGaps: gaps.length - allCycles.length,
       cycleCount: kept.length,
       droppedCount: dropped.length,
       droppedValues: dropped,
       learned,
       avgCycle,
       avgPeriod,
+      periodLearned: data.periods.some((p) => p.end),
       sd,
       window,
       confidence,
@@ -219,7 +243,7 @@
    * Current situation. kind is one of:
    * 'empty' | 'period' | 'prep' | 'due' | 'late' | 'normal'
    */
-  function status(data, analysis, todayISO) {
+  function status(analysis, todayISO) {
     const last = analysis.periods[analysis.periods.length - 1];
     if (!last) return { kind: 'empty' };
 
@@ -230,8 +254,7 @@
     const daysUntil = daysBetween(todayISO, nextStart);
     const base = { cycleDay, nextStart, windowStart, windowEnd, daysUntil, last };
 
-    const insideLast = todayISO >= last.start && todayISO <= last.end;
-    if (insideLast || data.ongoing) {
+    if (todayISO >= last.start && todayISO <= last.end) {
       return Object.assign(base, { kind: 'period', periodDay: cycleDay });
     }
     if (todayISO > windowEnd) {
@@ -266,8 +289,8 @@
   }
 
   window.LunaCycle = {
-    PREP_DAYS, MAX_CYCLE,
+    PREP_DAYS, MAX_CYCLE, MAX_PERIOD,
     toISO, fromISO, addDays, daysBetween, today, range,
-    groupPeriods, syncOngoing, analyze, status, predictions,
+    analyze, status, predictions,
   };
 })();

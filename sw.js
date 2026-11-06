@@ -2,7 +2,7 @@
  * Service worker: caches the app shell so Luna works offline.
  * Bump CACHE_NAME whenever app files change to force an update.
  */
-const CACHE_NAME = 'luna-v7';
+const CACHE_NAME = 'luna-v12';
 
 const APP_SHELL = [
   './',

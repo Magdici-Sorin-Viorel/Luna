@@ -119,53 +119,30 @@
 
   /* ---------- Data edits (all go through here) ---------- */
 
-  /**
-   * Records a period from start to end (inclusive). When end is null the period
-   * is still running if it started recently, otherwise its length is estimated.
-   */
+  /** Records a period by its first day; the last day is optional. Replaces an entry with the same start. */
   function addPeriod(start, end) {
-    const todayISO = Cycle.today();
-    const analysis = Cycle.analyze(data);
-    let finalEnd = end;
-    let ongoing = false;
-    if (!finalEnd) {
-      const estimated = Cycle.addDays(start, analysis.avgPeriod - 1);
-      if (estimated >= todayISO) {
-        finalEnd = todayISO;
-        ongoing = true;
-      } else {
-        finalEnd = estimated;
-      }
-    }
-    if (finalEnd > todayISO) finalEnd = todayISO;
-    const days = new Set(data.days);
-    Cycle.range(start, finalEnd).forEach((d) => days.add(d));
-    data.days = [...days].sort();
-    // Only the most recent period can be ongoing; adding an older one leaves the flag alone.
-    const periods = Cycle.groupPeriods(data.days);
-    const last = periods[periods.length - 1];
-    if (last && last.start <= start) data.ongoing = ongoing;
+    data.periods = data.periods.filter((p) => p.start !== start);
+    data.periods.push({ start, end: end || null });
+    data.periods.sort((a, b) => (a.start < b.start ? -1 : 1));
   }
 
-  function removePeriod(period) {
-    const remove = new Set(Cycle.range(period.start, period.end));
-    data.days = data.days.filter((d) => !remove.has(d));
-    const periods = Cycle.groupPeriods(data.days);
-    if (!periods.length || period.start >= periods[periods.length - 1].start) data.ongoing = false;
+  function removePeriod(start) {
+    data.periods = data.periods.filter((p) => p.start !== start);
   }
 
+  /** The recorded period that `day` would belong to: the latest one starting on or before it. */
+  function periodBefore(day) {
+    return [...data.periods].reverse().find((p) => p.start <= day) || null;
+  }
+
+  /** Sets the last day of the period containing `day`. Returns false when there is none. */
   function endPeriodOn(day) {
-    const periods = Cycle.groupPeriods(data.days);
-    const period = [...periods].reverse().find((p) => p.start <= day);
+    const period = periodBefore(day);
     if (!period) return false;
-    const next = periods[periods.indexOf(period) + 1];
-    const limit = next ? Cycle.addDays(next.start, -1) : Cycle.addDays(day, 60);
-    const drop = new Set(Cycle.range(Cycle.addDays(day, 1), limit));
-    data.days = data.days.filter((d) => !drop.has(d));
-    const keep = new Set(data.days);
-    Cycle.range(period.start, day).forEach((d) => keep.add(d));
-    data.days = [...keep].sort();
-    if (!next) data.ongoing = false;
+    const next = data.periods.find((p) => p.start > period.start);
+    if (next && day >= next.start) return false;
+    if (Cycle.daysBetween(period.start, day) + 1 > Cycle.MAX_PERIOD) return false;
+    period.end = day;
     return true;
   }
 
@@ -183,13 +160,11 @@
   }
 
   function needsOnboarding() {
-    return !data.profile.name && data.days.length === 0;
+    return !data.profile.name && data.periods.length === 0;
   }
 
   function render() {
     const todayISO = Cycle.today();
-    if (Cycle.syncOngoing(data, todayISO)) persist();
-
     if (needsOnboarding()) {
       $('tabbar').hidden = true;
       showView('onboarding');
@@ -200,7 +175,7 @@
     showView(currentView);
 
     const analysis = Cycle.analyze(data);
-    const status = Cycle.status(data, analysis, todayISO);
+    const status = Cycle.status(analysis, todayISO);
     renderToday(analysis, status, todayISO);
     renderCalendar(analysis, status, todayISO);
     renderHistory(analysis, todayISO);
@@ -220,81 +195,94 @@
 
   const EDITOR_MONTHS = 6;
 
-  /** The period whose first day falls in the given month (latest one if several). */
-  function periodInMonth(periods, year, month) {
-    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
-    const found = periods.filter((p) => p.start.startsWith(prefix));
-    return found.length ? found[found.length - 1] : null;
+  /** All periods whose first day falls in the given month key (YYYY-MM), oldest first. */
+  function periodsInMonth(key) {
+    return data.periods.filter((p) => p.start.startsWith(`${key}-`));
   }
 
-  /** Renders the last EDITOR_MONTHS months, newest first, prefilled from recorded periods. */
+  function entryMarkup(monthStart, maxStart, startVal) {
+    return `
+      <div class="entry">
+        <label class="field"><span class="field-label">Prima zi a ciclului</span>
+          <input type="date" name="start" min="${monthStart}" max="${maxStart}" value="${startVal}"></label>
+        <button type="button" class="entry-remove" data-remove-entry aria-label="Scoate acest ciclu">✕</button>
+      </div>`;
+  }
+
+  /**
+   * Renders the last EDITOR_MONTHS months, newest first, prefilled from recorded periods.
+   * A month can hold several periods (a 28-day cycle sometimes starts twice in one month).
+   */
   function renderMonthEditor(container, todayISO) {
-    const periods = Cycle.groupPeriods(data.days);
     const t = Cycle.fromISO(todayISO);
     const rows = [];
     for (let i = 0; i < EDITOR_MONTHS; i++) {
       const d = new Date(t.getFullYear(), t.getMonth() - i, 1);
       const year = d.getFullYear();
       const month = d.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
       const monthStart = Cycle.toISO(d);
       const monthEnd = Cycle.toISO(new Date(year, month + 1, 0));
       const maxStart = monthEnd < todayISO ? monthEnd : todayISO;
-      const period = periodInMonth(periods, year, month);
-      const isOpen = period && data.ongoing && period === periods[periods.length - 1];
-      const startVal = period ? period.start : '';
-      const endVal = period && !isOpen ? period.end : '';
-      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
-      const note = period
-        ? (isOpen ? 'în desfășurare' : `${daysText(period.length)}`)
-        : (i === 0 ? 'luna curentă' : '');
+      const periods = periodsInMonth(key);
+      const entries = periods.length ? periods : [{ start: '' }];
+      const note = periods.length === 0
+        ? (i === 0 ? 'luna curentă' : '')
+        : periods.length === 1 ? 'un ciclu notat' : `${periods.length} cicluri notate`;
       rows.push(`
-        <div class="month-row ${period ? 'is-filled' : ''}" data-month="${key}" data-original="${startVal}|${endVal}">
+        <div class="month-row ${periods.length ? 'is-filled' : ''}" data-month="${key}"
+             data-month-start="${monthStart}" data-max-start="${maxStart}">
           <div class="month-row-head"><span>${capitalize(MONTHS[month])} ${year}</span><small>${note}</small></div>
-          <div class="row">
-            <label class="field"><span class="field-label">Prima zi</span>
-              <input type="date" name="start" min="${monthStart}" max="${maxStart}" value="${startVal}"></label>
-            <label class="field"><span class="field-label">Ultima zi</span>
-              <input type="date" name="end" min="${monthStart}" max="${todayISO}" value="${endVal}"></label>
-          </div>
+          <div class="entries">${entries.map((p) => entryMarkup(monthStart, maxStart, p.start)).join('')}</div>
+          <button type="button" class="btn btn-link entry-add" data-add-entry>+ Încă un ciclu în această lună</button>
         </div>`);
     }
     container.innerHTML = rows.join('');
   }
 
+  /** Adds an empty entry to a month row (max 3 per month). */
+  function addMonthEntry(row) {
+    const entries = row.querySelector('.entries');
+    if (entries.children.length >= 3) { showToast('Maximum 3 cicluri într-o lună.'); return; }
+    entries.insertAdjacentHTML('beforeend', entryMarkup(row.dataset.monthStart, row.dataset.maxStart, ''));
+    entries.lastElementChild.querySelector('input[name="start"]').focus();
+  }
+
   /**
-   * Reads the editor. Returns { changes } where each change is
-   * { key, period (existing or null), start, end } for rows that differ from
-   * what is recorded, or { error } for the first invalid row.
+   * Reads the editor. Returns { changes }: one item per month whose first days differ
+   * from what is recorded, as { key, entries: [{ start, end }] }, or { error }.
+   * A last day already recorded for an unchanged first day is kept.
    */
   function readMonthEditor(container) {
     const todayISO = Cycle.today();
-    const periods = Cycle.groupPeriods(data.days);
     const changes = [];
     for (const row of container.querySelectorAll('.month-row')) {
-      const start = row.querySelector('input[name="start"]').value;
-      const end = row.querySelector('input[name="end"]').value;
-      const [year, month] = row.dataset.month.split('-').map(Number);
-      const label = `${MONTHS[month - 1]} ${year}`;
-      if (!start && end) return { error: `${capitalize(label)}: completează și prima zi.` };
-      if (start && !start.startsWith(row.dataset.month)) return { error: `${capitalize(label)}: prima zi trebuie să fie în această lună.` };
-      if (start && start > todayISO) return { error: `${capitalize(label)}: prima zi nu poate fi în viitor.` };
-      if (end && end < start) return { error: `${capitalize(label)}: ultima zi nu poate fi înaintea primei zile.` };
-      if (end && end > todayISO) return { error: `${capitalize(label)}: ultima zi nu poate fi în viitor.` };
-      if (end && Cycle.daysBetween(start, end) > 14) return { error: `${capitalize(label)}: o menstruație de peste 15 zile pare o greșeală.` };
-      if (`${start}|${end}` === row.dataset.original) continue;
-      changes.push({ period: periodInMonth(periods, year, month - 1), start, end: end || null });
+      const key = row.dataset.month;
+      const [year, month] = key.split('-').map(Number);
+      const label = capitalize(`${MONTHS[month - 1]} ${year}`);
+      const recorded = periodsInMonth(key);
+      const entries = [];
+      for (const entry of row.querySelectorAll('.entry')) {
+        const start = entry.querySelector('input[name="start"]').value;
+        if (!start) continue;
+        if (!start.startsWith(`${key}-`)) return { error: `${label}: prima zi trebuie să fie în această lună.` };
+        if (start > todayISO) return { error: `${label}: prima zi nu poate fi în viitor.` };
+        if (entries.some((e) => e.start === start)) return { error: `${label}: aceeași primă zi apare de două ori.` };
+        const existing = recorded.find((p) => p.start === start);
+        entries.push({ start, end: existing ? existing.end : null });
+      }
+      entries.sort((a, b) => (a.start < b.start ? -1 : 1));
+      if (recorded.map((p) => p.start).join(',') !== entries.map((e) => e.start).join(',')) changes.push({ key, entries });
     }
     return { changes };
   }
 
-  /** Applies editor changes to the data. Returns how many months were saved. */
+  /** Applies editor changes: each changed month is replaced by its edited entries. */
   function applyMonthChanges(changes) {
-    // Remove first, then add oldest-first so ongoing detection sees the latest period last.
-    changes.forEach((c) => { if (c.period) removePeriod(c.period); });
-    changes
-      .filter((c) => c.start)
-      .sort((a, b) => (a.start < b.start ? -1 : 1))
-      .forEach((c) => addPeriod(c.start, c.end));
+    changes.forEach((c) => {
+      periodsInMonth(c.key).forEach((p) => removePeriod(p.start));
+      c.entries.forEach((e) => addPeriod(e.start, e.end));
+    });
     return changes.length;
   }
 
@@ -308,7 +296,7 @@
       $('obDoneTitle').textContent = `Gata, ${name}`;
       $('obDoneText').textContent = 'Luna pornește de la zero. De la primul ciclu notat începe să învețe ritmul tău.';
     } else {
-      const status = Cycle.status(data, analysis, Cycle.today());
+      const status = Cycle.status(analysis, Cycle.today());
       $('obDoneTitle').textContent = `Mulțumesc, ${name}`;
       $('obDoneText').textContent = count === 1
         ? `Am notat un ciclu. Următorul e estimat în jurul datei de ${formatShort(status.nextStart)}. După al doilea ciclu notat, Luna începe să calculeze ritmul tău.`
@@ -353,7 +341,7 @@
     if (status.kind === 'empty') {
       eyebrow.textContent = 'Primul pas';
       title.textContent = 'Încă nu am niciun ciclu notat';
-      detail.textContent = 'Apasă butonul când începe ciclul, sau adaugă ultimul ciclu dacă ți-l amintești.';
+      detail.textContent = 'Apasă butonul în prima zi a ciclului. Atât e de ajuns: Luna calculează restul.';
       $('timeline').innerHTML = '';
       $('timelineCaption').textContent = '';
       primary.textContent = 'A început ciclul';
@@ -365,9 +353,9 @@
         case 'period':
           eyebrow.textContent = 'Menstruație';
           title.textContent = `Ziua ${status.periodDay}`;
-          detail.textContent = data.ongoing
-            ? `De obicei durează ${daysText(analysis.avgPeriod)}. Apasă butonul când se termină.`
-            : `Următorul ciclu e estimat în jurul datei de ${formatShort(status.nextStart)}.`;
+          detail.textContent = status.last.endKnown
+            ? `Ultima zi notată: ${formatShort(status.last.end)}. Următorul ciclu e estimat în jurul datei de ${formatShort(status.nextStart)}.`
+            : `De obicei durează ${daysText(analysis.avgPeriod)}. Dacă vrei, notează și ultima zi; nu e obligatoriu.`;
           break;
         case 'prep':
           eyebrow.textContent = 'Zile de pregătire';
@@ -398,17 +386,10 @@
       $('timelineCaption').innerHTML = `<span>Ziua 1 · ${formatShort(status.last.start)}</span><span>Ziua ${status.cycleDay}</span><span>~${formatShort(status.nextStart)}</span>`;
 
       if (status.kind === 'period') {
-        if (data.ongoing) {
-          primary.textContent = 'S-a terminat ciclul';
-          primary.dataset.action = 'end-today';
-          secondary.textContent = 'S-a terminat în altă zi';
-          secondary.dataset.action = 'pick-end';
-        } else {
-          primary.textContent = 'Ciclul continuă';
-          primary.dataset.action = 'resume';
-          secondary.textContent = 'Corectează din calendar';
-          secondary.dataset.action = 'go-calendar';
-        }
+        primary.textContent = status.last.endKnown ? 'Schimbă ultima zi' : 'S-a terminat azi';
+        primary.dataset.action = status.last.endKnown ? 'pick-end' : 'end-today';
+        secondary.textContent = status.last.endKnown ? 'Corectează din calendar' : 'S-a terminat în altă zi';
+        secondary.dataset.action = status.last.endKnown ? 'go-calendar' : 'pick-end';
       } else {
         primary.textContent = 'A început ciclul';
         primary.dataset.action = 'start-today';
@@ -423,16 +404,19 @@
     chip.textContent = CONFIDENCE_LABEL[analysis.confidence];
     $('confidenceCount').textContent = analysis.cycleCount
       ? `${capitalize(cyclesText(analysis.cycleCount))} ${analysis.cycleCount === 1 ? 'notat' : 'notate'}`
-      : 'Niciun ciclu complet încă';
+      : 'Un singur început notat';
     let text;
     if (!analysis.learned) {
-      text = `Folosesc valorile din Setări (${analysis.avgCycle} zile). După două începuturi de ciclu notate, Luna calculează ritmul tău.`;
-    } else if (analysis.cycleCount < CYCLES_FOR_GOOD_PREDICTION) {
-      text = `Ritmul tău: ~${analysis.avgCycle} zile. Mai notează ${cyclesText(CYCLES_FOR_GOOD_PREDICTION - analysis.cycleCount)} pentru o estimare bună.`;
+      const missing = Math.max(0, CYCLES_FOR_GOOD_PREDICTION - analysis.cycleCount);
+      text = `Calculez cu ${daysText(analysis.avgCycle)}, durata din Setări.`;
+      text += missing
+        ? ` Luna trece la ritmul tău după ${cyclesText(CYCLES_FOR_GOOD_PREDICTION)} consecutive notate; mai ${missing === 1 ? 'lipsește unul' : `lipsesc ${missing}`}.`
+        : ' Ciclurile notate variază prea mult ca să mă bazez pe ele deocamdată.';
     } else {
       text = `Ritmul tău: ~${analysis.avgCycle} zile, cu variație de ±${analysis.sd.toFixed(1)} zile. Interval probabil: ±${daysText(analysis.window)}.`;
       if (analysis.droppedCount) text += ` ${capitalize(cyclesText(analysis.droppedCount))} neobișnuit${analysis.droppedCount === 1 ? '' : 'e'} nu intră în calcul.`;
     }
+    if (analysis.splitGaps || analysis.ignoredGaps) text += ' Unele luni par nenotate; le poți completa din Setări.';
     $('confidenceText').textContent = text;
     $('confidenceBox').hidden = status.kind === 'empty';
 
@@ -461,8 +445,7 @@
     input.max = todayISO;
     input.min = '';
     if (mode === 'end') {
-      const periods = Cycle.groupPeriods(data.days);
-      const last = periods[periods.length - 1];
+      const last = data.periods[data.periods.length - 1];
       input.min = last ? last.start : '';
       $('pickLabel').textContent = 'Ultima zi a ciclului';
     } else {
@@ -485,10 +468,10 @@
     if (day > todayISO) { showToast('Data nu poate fi în viitor.'); return; }
     if (pickMode === 'start') {
       addPeriod(day, null);
-      showToast(`Am notat începutul ciclului pe ${formatShort(day)}.`);
+      showToast(`Am notat prima zi a ciclului: ${formatShort(day)}.`);
     } else if (pickMode === 'end') {
-      if (!endPeriodOn(day)) { showToast('Nu există un ciclu început înainte de această dată.'); return; }
-      showToast(`Am notat finalul ciclului pe ${formatShort(day)}.`);
+      if (!endPeriodOn(day)) { showToast('Ultima zi trebuie să fie după prima zi a aceluiași ciclu, nu mai târziu de 15 zile.'); return; }
+      showToast(`Am notat ultima zi a ciclului: ${formatShort(day)}.`);
     }
     closePicker();
     persist();
@@ -503,12 +486,8 @@
         showToast('Am notat începutul ciclului.');
         break;
       case 'end-today':
-        endPeriodOn(todayISO);
-        showToast('Am notat finalul ciclului.');
-        break;
-      case 'resume':
-        data.ongoing = true;
-        showToast('Ciclul continuă. Zilele se adaugă automat.');
+        if (!endPeriodOn(todayISO)) { showToast('Nu am găsit un ciclu în desfășurare.'); return; }
+        showToast('Am notat ultima zi a ciclului.');
         break;
       case 'pick-start': openPicker('start'); return;
       case 'pick-end': openPicker('end'); return;
@@ -534,7 +513,8 @@
     const { year, month } = calendarMonth;
     $('calTitle').textContent = `${capitalize(MONTHS[month])} ${year}`;
 
-    const periodDays = new Set(data.days);
+    const periodDays = new Map(); // iso -> resolved period
+    analysis.periods.forEach((p) => Cycle.range(p.start, p.end).forEach((d) => periodDays.set(d, p)));
     const predicted = new Set();
     const windowDays = new Set();
     const prep = new Set();
@@ -554,8 +534,12 @@
       const iso = Cycle.toISO(new Date(year, month, d));
       const classes = ['day'];
       const labels = [];
-      if (periodDays.has(iso)) { classes.push('is-period'); labels.push('ciclu'); }
-      else {
+      const period = periodDays.get(iso);
+      if (period) {
+        classes.push('is-period');
+        if (!period.endKnown && iso !== period.start) classes.push('is-assumed');
+        labels.push(iso === period.start ? 'prima zi a ciclului' : period.endKnown ? 'ciclu' : 'ciclu (durată estimată)');
+      } else {
         if (windowDays.has(iso)) { classes.push('is-window'); labels.push('interval probabil'); }
         if (predicted.has(iso)) { classes.push('is-predicted'); labels.push('estimat'); }
         if (prep.has(iso)) { classes.push('is-prep'); labels.push('pregătire'); }
@@ -576,14 +560,15 @@
       return;
     }
     sheetDay = iso;
-    const marked = data.days.includes(iso);
-    const periods = Cycle.groupPeriods(data.days);
-    const period = periods.find((p) => iso >= p.start && iso <= p.end);
+    const analysis = Cycle.analyze(data);
+    const period = analysis.periods.find((p) => iso >= p.start && iso <= p.end);
     $('sheetTitle').textContent = capitalize(formatLong(iso));
     $('sheetInfo').textContent = period
-      ? `Zi de ciclu (${formatRange(period.start, period.end)}${period.end === todayISO && data.ongoing ? ', în desfășurare' : ''}).`
+      ? `Ciclu început pe ${formatShort(period.start)}${period.endKnown ? `, ultima zi ${formatShort(period.end)}` : `, durată estimată ${daysText(period.length)}`}.`
       : 'Nu e notată ca zi de ciclu.';
-    $('sheetToggle').textContent = marked ? 'Nu e zi de ciclu' : 'Doar această zi';
+    const del = $('sheetDelete');
+    del.hidden = !period;
+    if (period) del.dataset.start = period.start;
     $('daySheet').hidden = false;
   }
 
@@ -600,21 +585,12 @@
       addPeriod(iso, null);
       showToast(`${formatShort(iso)}: prima zi a ciclului.`);
     } else if (action === 'end') {
-      if (!endPeriodOn(iso)) { showToast('Nu există un ciclu început înainte de această zi.'); return; }
+      if (!endPeriodOn(iso)) { showToast('Ultima zi trebuie să fie după prima zi a aceluiași ciclu, nu mai târziu de 15 zile.'); return; }
       showToast(`${formatShort(iso)}: ultima zi a ciclului.`);
-    } else if (action === 'toggle') {
-      const index = data.days.indexOf(iso);
-      if (index >= 0) {
-        data.days.splice(index, 1);
-        const periods = Cycle.groupPeriods(data.days);
-        const last = periods[periods.length - 1];
-        if (data.ongoing && (!last || iso > last.end)) data.ongoing = false;
-        showToast(`${formatShort(iso)} nu mai e zi de ciclu.`);
-      } else {
-        data.days.push(iso);
-        data.days.sort();
-        showToast(`${formatShort(iso)} notată ca zi de ciclu.`);
-      }
+    } else if (action === 'delete') {
+      const start = $('sheetDelete').dataset.start;
+      removePeriod(start);
+      showToast(`Am șters ciclul din ${formatShort(start)}.`);
     }
     closeDaySheet();
     persist();
@@ -632,7 +608,7 @@
   function renderHistory(analysis, todayISO) {
     const stats = [];
     stats.push({ num: analysis.avgCycle, unit: 'zile', label: analysis.learned ? 'ciclul tău, în medie' : 'ciclu (valoare de pornire)' });
-    stats.push({ num: analysis.avgPeriod, unit: 'zile', label: 'menstruația, în medie' });
+    stats.push({ num: analysis.avgPeriod, unit: 'zile', label: analysis.periodLearned ? 'menstruația, în medie' : 'menstruația (din Setări)' });
     if (analysis.cycleCount >= 2) {
       stats.push({ num: `${analysis.shortest}–${analysis.longest}`, unit: 'zile', label: 'cel mai scurt – cel mai lung' });
       stats.push({ num: `±${analysis.sd.toFixed(1)}`, unit: 'zile', label: 'variație' });
@@ -650,8 +626,10 @@
       const p = periods[i];
       const next = periods[i + 1];
       const cycleLen = next ? Cycle.daysBetween(p.start, next.start) : null;
-      const isOpen = !next && data.ongoing;
-      const outlier = cycleLen !== null && (cycleLen < 15 || cycleLen > Cycle.MAX_CYCLE || dropped.includes(cycleLen));
+      const span = cycleLen ? Math.round(cycleLen / analysis.avgCycle) : 1;
+      const skipped = cycleLen !== null && span >= 2 && cycleLen / analysis.avgCycle >= 1.6;
+      const estimated = !p.endKnown;
+      const outlier = cycleLen !== null && !skipped && (cycleLen < 15 || cycleLen > Cycle.MAX_CYCLE || dropped.includes(cycleLen));
       const barLen = cycleLen || Cycle.daysBetween(p.start, todayISO) + 1;
       const widthPct = Math.min(100, (barLen / Cycle.MAX_CYCLE) * 100);
       const periodPct = Math.min(100, (p.length / Cycle.MAX_CYCLE) * 100);
@@ -659,8 +637,8 @@
         <li class="cycle">
           <span class="cycle-start">${formatShort(p.start, true)}</span>
           <span class="cycle-bar"><i style="width:${widthPct}%"></i><b style="width:${periodPct}%"></b></span>
-          <span class="cycle-len ${outlier ? 'is-outlier' : ''}">${cycleLen ? daysText(cycleLen) : 'ciclul curent'}</span>
-          <span class="cycle-sub">menstruație ${isOpen ? 'în desfășurare' : daysText(p.length)} (${formatRange(p.start, p.end)})${outlier ? ' · neobișnuit, nu intră în calcul' : ''}</span>
+          <span class="cycle-len ${outlier || skipped ? 'is-outlier' : ''}">${cycleLen ? daysText(cycleLen) : 'ciclul curent'}</span>
+          <span class="cycle-sub">menstruație ${estimated ? '~' : ''}${daysText(p.length)}${estimated ? ' (estimat)' : ` (${formatRange(p.start, p.end)})`}${skipped ? ` · probabil ${span} cicluri, ${span - 1 === 1 ? 'o lună nenotată' : `${span - 1} luni nenotate`}` : outlier ? ' · neobișnuit, nu intră în calcul' : ''}</span>
           <button type="button" class="cycle-del" data-del="${p.start}">Șterge</button>
         </li>`);
     }
@@ -676,7 +654,7 @@
     if (!start) { showToast('Completează prima zi.'); return; }
     if (start > todayISO || end > todayISO) { showToast('Datele nu pot fi în viitor.'); return; }
     if (end && end < start) { showToast('Ultima zi nu poate fi înaintea primei zile.'); return; }
-    if (end && Cycle.daysBetween(start, end) > 14) { showToast('O menstruație de peste 15 zile pare o greșeală.'); return; }
+    if (end && Cycle.daysBetween(start, end) + 1 > Cycle.MAX_PERIOD) { showToast(`O menstruație de peste ${Cycle.MAX_PERIOD} zile pare o greșeală.`); return; }
     addPeriod(start, end || null);
     $('addStart').value = '';
     $('addEnd').value = '';
@@ -763,7 +741,7 @@
   function exportCalendar() {
     const todayISO = Cycle.today();
     const analysis = Cycle.analyze(data);
-    const status = Cycle.status(data, analysis, todayISO);
+    const status = Cycle.status(analysis, todayISO);
     const upcoming = Cycle.predictions(analysis, status, todayISO, CALENDAR_EVENTS);
     if (!upcoming.length) {
       showToast('Notează mai întâi un ciclu.');
@@ -803,7 +781,7 @@
       persist();
       currentView = 'today';
       render();
-      showToast(`Am importat ${daysText(imported.days.length)} de ciclu.`);
+      showToast(`Am importat ${cyclesText(imported.periods.length)}.`);
     } catch (err) {
       showToast('Fișierul nu pare un backup Luna. Verifică și încearcă din nou.');
     }
@@ -857,6 +835,24 @@
       render();
     });
 
+    // Month editors: add or remove a cycle inside a month
+    ['obMonths', 'setMonths'].forEach((id) => {
+      $(id).addEventListener('click', (e) => {
+        const add = e.target.closest('[data-add-entry]');
+        if (add) { addMonthEntry(add.closest('.month-row')); return; }
+        const remove = e.target.closest('[data-remove-entry]');
+        if (remove) {
+          const entry = remove.closest('.entry');
+          const entries = entry.parentElement;
+          if (entries.children.length === 1) {
+            entry.querySelector('input').value = '';
+          } else {
+            entry.remove();
+          }
+        }
+      });
+    });
+
     // Tabs
     $('tabbar').addEventListener('click', (e) => {
       const tab = e.target.closest('.tab');
@@ -892,12 +888,10 @@
     $('cycleList').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-del]');
       if (!btn) return;
-      const period = Cycle.groupPeriods(data.days).find((p) => p.start === btn.dataset.del);
-      if (!period) return;
-      removePeriod(period);
+      removePeriod(btn.dataset.del);
       persist();
       render();
-      showToast(`Am șters ciclul din ${formatShort(period.start)}.`);
+      showToast(`Am șters ciclul din ${formatShort(btn.dataset.del)}.`);
     });
 
     // Settings
